@@ -1,0 +1,68 @@
+name: CD - Deploy to Production
+
+on:
+  push:
+    branches: [ main ]
+    tags:
+      - 'v*'
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - uses: actions/checkout@v4
+    
+    - name: Use Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20.x'
+        cache: 'npm'
+    
+    - name: Install dependencies
+      run: npm ci --production
+    
+    - name: Run database migrations
+      run: node scripts/migrate.js || echo "No migrations to run"
+      env:
+        NODE_ENV: production
+    
+    - name: Create backup before deploy
+      run: |
+        ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+          "cd ${{ secrets.DEPLOY_PATH }} && node backupDatabase.js"
+    
+    - name: Deploy to server
+      uses: easingthemes/ssh-deploy@v4
+      with:
+        SSH_PRIVATE_KEY: ${{ secrets.SSH_PRIVATE_KEY }}
+        REMOTE_HOST: ${{ secrets.DEPLOY_HOST }}
+        REMOTE_USER: ${{ secrets.DEPLOY_USER }}
+        TARGET: ${{ secrets.DEPLOY_PATH }}
+        EXCLUDE: "/node_modules/, /.git/, /logs/, *.db, .env"
+    
+    - name: Install production dependencies
+      run: |
+        ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+          "cd ${{ secrets.DEPLOY_PATH }} && npm ci --production"
+    
+    - name: Restart application
+      run: |
+        ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+          "pm2 restart webportaal_pagaaierTools || pm2 start server.js --name webportaal_pagaaierTools"
+    
+    - name: Health check
+      run: |
+        sleep 10
+        curl -f http://${{ secrets.DEPLOY_HOST }}:3000/health || exit 1
+    
+    - name: Notify deployment success
+      if: success()
+      run: echo "✅ Deployment successful!"
+    
+    - name: Rollback on failure
+      if: failure()
+      run: |
+        ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+          "cd ${{ secrets.DEPLOY_PATH }} && git reset --hard HEAD~1 && pm2 restart webportaal_pagaaierTools"

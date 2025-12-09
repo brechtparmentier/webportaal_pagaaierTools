@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="nl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Scan Resultaten - Webportaal PagaaierTools</title>
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="admin-container">
+    <header class="admin-header">
+      <h1>Scan Resultaten</h1>
+      <div class="admin-user">
+        <span>Ingelogd als: <strong><%= username %></strong></span>
+        <a href="/admin/logout" class="btn btn-secondary">Uitloggen</a>
+      </div>
+    </header>
+
+    <nav class="admin-nav">
+      <a href="/admin">Terug naar Admin</a>
+    </nav>
+
+    <main class="admin-main">
+      <section class="admin-section">
+        <h2>Gevonden Projecten (<%= projects.length %>)</h2>
+
+        <% if (projects.length === 0) { %>
+          <p class="no-projects">Geen projecten gevonden in de opgegeven directory.</p>
+          <a href="/admin" class="btn btn-secondary">Terug naar Admin</a>
+        <% } else { %>
+          <form method="POST" action="/admin/import-scanned">
+            <div class="scan-results-grid">
+              <% projects.forEach((project, index) => { %>
+                <div class="scan-result-card">
+                  <div class="scan-result-header">
+                    <label>
+                      <input type="checkbox" name="selected_projects" value="<%= index %>" checked>
+                      <strong><%= project.name %></strong>
+                    </label>
+                    <span class="setup-badge <%= project.setup_type %>"><%= project.setup_type %></span>
+                  </div>
+
+                  <div class="scan-result-body">
+                    <p class="project-path"><code><%= project.directory_path %></code></p>
+
+                    <% if (project.description) { %>
+                      <p class="project-description"><%= project.description %></p>
+                    <% } %>
+
+                    <div class="project-details">
+                      <div class="detail-item">
+                        <strong>Poorten:</strong>
+                        <% if (project.ports && project.ports.length > 0) { %>
+                          <%= project.ports.join(', ') %>
+                        <% } else { %>
+                          <em>Geen poorten gevonden</em>
+                        <% } %>
+                      </div>
+
+                      <div class="detail-item">
+                        <strong>URLs:</strong>
+                        <% if (project.urls && project.urls.length > 0) { %>
+                          <ul class="url-list">
+                            <% project.urls.forEach(urlObj => { %>
+                              <li>
+                                <span class="url-type-badge <%= urlObj.type %>"><%= urlObj.type %></span>
+                                <code><%= urlObj.url %></code>
+                              </li>
+                            <% }); %>
+                          </ul>
+                        <% } else { %>
+                          <em>Geen URLs gevonden</em>
+                        <% } %>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              <% }); %>
+            </div>
+
+            <div class="form-actions">
+              <button type="submit" class="btn btn-primary">Geselecteerde Projecten Importeren</button>
+              <a href="/admin" class="btn btn-secondary">Annuleren</a>
+            </div>
+          </form>
+
+          <section class="admin-section" style="margin-top: 30px;">
+            <h3>JSON Export</h3>
+            <p>Kopieer onderstaande JSON om later te importeren</p>
+            <textarea readonly rows="15" style="width: 100%; font-family: monospace; font-size: 12px;"><%= jsonExport %></textarea>
+          </section>
+        <% } %>
+      </section>
+    </main>
+  </div>
+
+  <script>
+    // Select all / deselect all functionaliteit
+    const checkboxes = document.querySelectorAll('input[name="selected_projects"]');
+
+    // Voeg een "Selecteer alles" button toe
+    if (checkboxes.length > 0) {
+      const header = document.querySelector('h2');
+      const toggleBtn = document.createElement('button');
+      toggleBtn.type = 'button';
+      toggleBtn.className = 'btn btn-small btn-secondary';
+      toggleBtn.textContent = 'Deselecteer Alles';
+      toggleBtn.style.marginLeft = '15px';
+
+      toggleBtn.addEventListener('click', () => {
+        const allChecked = Array.from(checkboxes).every(cb => cb.checked);
+        checkboxes.forEach(cb => cb.checked = !allChecked);
+        toggleBtn.textContent = allChecked ? 'Selecteer Alles' : 'Deselecteer Alles';
+      });
+
+      header.appendChild(toggleBtn);
+    }
+  </script>
+</body>
+</html>

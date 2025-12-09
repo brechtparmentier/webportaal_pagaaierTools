@@ -1,0 +1,39 @@
+name: Database Backup
+
+on:
+  schedule:
+    # Run daily at 2 AM
+    - cron: '0 2 * * *'
+  workflow_dispatch:
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Run backup on server
+      run: |
+        ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+          "cd ${{ secrets.DEPLOY_PATH }} && node backupDatabase.js"
+    
+    - name: Verify backup created
+      run: |
+        ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+          "cd ${{ secrets.DEPLOY_PATH }}/backups && ls -lh | tail -1"
+    
+    - name: Upload backup to artifact storage
+      run: |
+        BACKUP_FILE=$(ssh ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }} \
+          "cd ${{ secrets.DEPLOY_PATH }}/backups && ls -t | head -1")
+        scp ${{ secrets.DEPLOY_USER }}@${{ secrets.DEPLOY_HOST }}:${{ secrets.DEPLOY_PATH }}/backups/$BACKUP_FILE ./
+    
+    - name: Upload backup artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: database-backup-${{ github.run_number }}
+        path: '*.db'
+        retention-days: 30
+    
+    - name: Notify on failure
+      if: failure()
+      run: echo "❌ Backup failed! Please check manually."
