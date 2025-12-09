@@ -19,6 +19,14 @@ const SESSION_SECRET = process.env.SESSION_SECRET || 'pagaaiertools-secret-key-2
 const SESSION_MAX_AGE = parseInt(process.env.SESSION_MAX_AGE || '86400000'); // 24 hours
 const DEFAULT_PROJECT_PORT = parseInt(process.env.DEFAULT_PROJECT_PORT || '3000');
 
+// Network configuration
+const SERVER_LAN_IP = process.env.SERVER_LAN_IP || '10.46.54.180';
+const SERVER_VPN_IP = process.env.SERVER_VPN_IP || '10.0.0.9';
+const SHOW_LOCALHOST_URLS = process.env.SHOW_LOCALHOST_URLS !== 'false';
+const SHOW_LAN_URLS = process.env.SHOW_LAN_URLS !== 'false';
+const SHOW_VPN_URLS = process.env.SHOW_VPN_URLS !== 'false';
+const SHOW_OFFLINE_PROJECTS = process.env.SHOW_OFFLINE_PROJECTS !== 'false';
+
 // Initialiseer database
 initDatabase();
 
@@ -50,20 +58,98 @@ function requireAuth(req, res, next) {
   res.redirect('/admin/login');
 }
 
+/**
+ * Expand URLs to include localhost, LAN, and VPN variants
+ * @param {Array} urls - Original URLs from project
+ * @returns {Array} - Expanded URLs with all network variants
+ */
+function expandProjectUrls(urls) {
+  const expanded = [];
+
+  for (const urlObj of urls) {
+    const url = urlObj.url || '';
+
+    // Check if it's a localhost URL with a port
+    const localhostMatch = url.match(/https?:\/\/(?:localhost|127\.0\.0\.1):(\d+)/i);
+
+    if (localhostMatch) {
+      const port = localhostMatch[1];
+      const baseLabel = urlObj.label || urlObj.type || 'Port';
+
+      // Add localhost variant
+      if (SHOW_LOCALHOST_URLS) {
+        expanded.push({
+          ...urlObj,
+          url: `http://localhost:${port}`,
+          label: `${baseLabel} (localhost)`,
+          network: 'localhost',
+          port: parseInt(port)
+        });
+      }
+
+      // Add LAN variant
+      if (SHOW_LAN_URLS && SERVER_LAN_IP) {
+        expanded.push({
+          ...urlObj,
+          url: `http://${SERVER_LAN_IP}:${port}`,
+          label: `${baseLabel} (LAN)`,
+          network: 'lan',
+          port: parseInt(port)
+        });
+      }
+
+      // Add VPN variant
+      if (SHOW_VPN_URLS && SERVER_VPN_IP) {
+        expanded.push({
+          ...urlObj,
+          url: `http://${SERVER_VPN_IP}:${port}`,
+          label: `${baseLabel} (VPN)`,
+          network: 'vpn',
+          port: parseInt(port)
+        });
+      }
+    } else {
+      // Non-localhost URL, keep as-is
+      expanded.push({
+        ...urlObj,
+        network: 'external'
+      });
+    }
+  }
+
+  return expanded;
+}
+
 // Routes
 
 // Home page - toon alle beschikbare projecten
 app.get('/', async (req, res) => {
   try {
-    const projects = queries.getEnabledProjects.all();
+    let projects = queries.getEnabledProjects.all();
 
-    // Check port status for each project
+    // Process each project
     for (const project of projects) {
       const urls = project.urls ? JSON.parse(project.urls) : [];
-      project.urlsWithStatus = await checkProjectUrls(urls);
+
+      // Expand URLs to include localhost, LAN, and VPN variants
+      const expandedUrls = expandProjectUrls(urls);
+
+      // Check port status for expanded URLs
+      project.urlsWithStatus = await checkProjectUrls(expandedUrls);
+
+      // Determine if project has any online URLs
+      project.hasOnlineUrl = project.urlsWithStatus.some(u => u.online);
     }
 
-    res.render('index', { projects });
+    // Filter offline projects if configured
+    if (!SHOW_OFFLINE_PROJECTS) {
+      projects = projects.filter(p => p.hasOnlineUrl);
+    }
+
+    res.render('index', {
+      projects,
+      showOfflineProjects: SHOW_OFFLINE_PROJECTS
+    });
   } catch (error) {
     console.error('Error loading projects:', error);
     res.status(500).send('Error loading projects');
@@ -295,24 +381,51 @@ app.post('/admin/import-scanned', requireAuth, (req, res) => {
     const scannedProjects = req.session.scannedProjects || [];
     const selectedIndices = Array.isArray(selected_projects) ? selected_projects : [selected_projects];
 
+    let imported = 0;
+    let updated = 0;
+    let skipped = 0;
+
     for (const index of selectedIndices) {
       const project = scannedProjects[parseInt(index)];
       if (project) {
+        // Check of project al bestaat op basis van directory_path
+        const existing = queries.getProjectByPath.get(project.directory_path);
+
         const port = project.ports && project.ports.length > 0 ? project.ports[0] : DEFAULT_PROJECT_PORT;
         const urlsJson = JSON.stringify(project.urls);
 
-        queries.createProject.run(
-          project.name,
-          project.description || '',
-          project.directory_path,
-          port,
-          1,
-          project.setup_type || 'unknown',
-          urlsJson
-        );
+        if (existing) {
+          // Update bestaand project
+          queries.updateProject.run(
+            project.name,
+            project.description || existing.description || '',
+            project.directory_path,
+            port,
+            existing.enabled,
+            project.setup_type || existing.setup_type || 'unknown',
+            urlsJson,
+            existing.id
+          );
+          updated++;
+        } else {
+          // Nieuw project toevoegen
+          queries.createProject.run(
+            project.name,
+            project.description || '',
+            project.directory_path,
+            port,
+            1,
+            project.setup_type || 'unknown',
+            urlsJson
+          );
+          imported++;
+        }
+      } else {
+        skipped++;
       }
     }
 
+    console.log(`Import complete: ${imported} new, ${updated} updated, ${skipped} skipped`);
     req.session.scannedProjects = null;
     res.redirect('/admin');
   } catch (error) {
@@ -338,21 +451,45 @@ app.post('/admin/import-json', requireAuth, (req, res) => {
     }
 
     // Importeer alle projecten
+    let imported = 0;
+    let updated = 0;
+
     for (const project of result.projects) {
       const port = project.ports && project.ports.length > 0 ? project.ports[0] : project.port || 3000;
       const urlsJson = JSON.stringify(project.urls || []);
 
-      queries.createProject.run(
-        project.name,
-        project.description || '',
-        project.directory_path,
-        port,
-        project.enabled !== undefined ? project.enabled : 1,
-        project.setup_type || 'unknown',
-        urlsJson
-      );
+      // Check of project al bestaat
+      const existing = queries.getProjectByPath.get(project.directory_path);
+
+      if (existing) {
+        // Update bestaand project
+        queries.updateProject.run(
+          project.name,
+          project.description || existing.description || '',
+          project.directory_path,
+          port,
+          project.enabled !== undefined ? project.enabled : existing.enabled,
+          project.setup_type || existing.setup_type || 'unknown',
+          urlsJson,
+          existing.id
+        );
+        updated++;
+      } else {
+        // Nieuw project
+        queries.createProject.run(
+          project.name,
+          project.description || '',
+          project.directory_path,
+          port,
+          project.enabled !== undefined ? project.enabled : 1,
+          project.setup_type || 'unknown',
+          urlsJson
+        );
+        imported++;
+      }
     }
 
+    console.log(`JSON import complete: ${imported} new, ${updated} updated`);
     res.redirect('/admin');
   } catch (error) {
     console.error('Error importing JSON:', error);

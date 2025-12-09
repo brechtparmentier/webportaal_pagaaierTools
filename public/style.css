@@ -194,6 +194,64 @@ body {
   color: white;
 }
 
+/* Filter Controls */
+.filter-controls {
+  background: white;
+  padding: 20px;
+  margin: 0 20px 20px 20px;
+  border-radius: 10px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+  display: flex;
+  flex-wrap: wrap;
+  gap: 20px;
+  align-items: center;
+  justify-content: center;
+}
+
+.filter-group {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.filter-label {
+  font-weight: 600;
+  color: #555;
+  font-size: 14px;
+}
+
+.filter-btn {
+  padding: 8px 16px;
+  border: 2px solid #ddd;
+  background: white;
+  border-radius: 20px;
+  font-size: 13px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s;
+  color: #666;
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.filter-btn:hover {
+  border-color: #667eea;
+  transform: translateY(-2px);
+}
+
+.filter-btn.active {
+  background: #667eea;
+  border-color: #667eea;
+  color: white;
+}
+
+.filter-btn.active:hover {
+  background: #5568d3;
+  border-color: #5568d3;
+}
+
 .main-content {
   flex: 1;
   padding: 40px 20px;
@@ -676,6 +734,36 @@ select:focus {
   color: #1565c0;
 }
 
+/* Network badges */
+.network-badge {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 4px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  margin-right: 8px;
+  border: 1px solid;
+}
+
+.network-badge.localhost {
+  background: #f5f5f5;
+  color: #616161;
+  border-color: #e0e0e0;
+}
+
+.network-badge.lan {
+  background: #e8f5e9;
+  color: #2e7d32;
+  border-color: #66bb6a;
+}
+
+.network-badge.vpn {
+  background: #e3f2fd;
+  color: #1565c0;
+  border-color: #42a5f5;
+}
+
 /* Scan results */
 .scan-results-grid {
   display: grid;
@@ -878,6 +966,29 @@ select:focus {
   padding: 2px 8px;
   background: #e9ecef;
   border-radius: 4px;
+}
+
+/* Warning badge for offline VPN/LAN URLs */
+.warning-badge {
+  display: inline-block;
+  padding: 4px 10px;
+  background: #fff3cd;
+  border: 1px solid #ffc107;
+  color: #856404;
+  border-radius: 4px;
+  font-size: 11px;
+  font-weight: 600;
+  margin-left: 8px;
+}
+
+.url-item.needs-attention {
+  border-left: 3px solid #ffc107;
+  background: #fffbf0;
+}
+
+.url-item.needs-attention:hover {
+  background: #fff8e1;
+  border-left-color: #ff9800;
 }
 
 .url-actions {

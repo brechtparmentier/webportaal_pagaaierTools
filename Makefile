@@ -18,7 +18,7 @@ help:
 	@echo "  make setup            Complete first-time setup"
 	@echo ""
 	@echo "🚀 Server Management:"
-	@echo "  make start            Start the server (production)"
+	@echo "  make start            Start the server (with PM2 if available)"
 	@echo "  make stop             Stop the server"
 	@echo "  make restart          Restart the server"
 	@echo "  make dev              Start in development mode (with nodemon)"
@@ -27,8 +27,19 @@ help:
 	@echo "📊 Monitoring & Logs:"
 	@echo "  make logs             Show recent logs"
 	@echo "  make logs-follow      Follow logs in real-time"
+	@echo "  make watch            Watch server logs"
+	@echo "  make tail             Tail log file"
 	@echo "  make health           Check application health"
 	@echo "  make ps               Show running Node processes"
+	@echo ""
+	@echo "🔧 PM2 Management:"
+	@echo "  make pm2-status       Show PM2 processes"
+	@echo "  make pm2-logs         Stream PM2 logs"
+	@echo "  make pm2-monit        Open PM2 monitor"
+	@echo "  make pm2-restart      Restart with PM2"
+	@echo "  make pm2-reload       Zero-downtime reload"
+	@echo "  make pm2-startup      Configure auto-startup"
+	@echo "  make pm2-save         Save PM2 process list"
 	@echo ""
 	@echo "💾 Database Management:"
 	@echo "  make backup           Create database backup"
@@ -44,6 +55,15 @@ help:
 	@echo "  make clean            Clean temporary files and logs"
 	@echo "  make clean-all        Deep clean (includes node_modules)"
 	@echo "  make update           Update dependencies"
+	@echo "  make deploy           Backup + update + restart"
+	@echo "  make reset            Complete reset (DANGEROUS!)"
+	@echo ""
+	@echo "🔧 Utilities:"
+	@echo "  make port-check       Check what's on configured port"
+	@echo "  make kill-port        Kill process on configured port"
+	@echo "  make open             Open app in browser"
+	@echo "  make env              Show environment config"
+	@echo "  make info             Show project info"
 	@echo ""
 	@echo "ℹ️  Server runs on port 9344 (configured in .env)"
 	@echo ""
@@ -113,23 +133,42 @@ restart: stop start
 status:
 	@echo "📊 Server Status:"
 	@echo ""
-	@if command -v pm2 > /dev/null && pm2 list | grep -q webportaal_pagaaierTools; then \
-		pm2 status webportaal_pagaaierTools; \
-	elif [ -f .server.pid ]; then \
-		if ps -p $$(cat .server.pid) > /dev/null 2>&1; then \
-			echo "✅ Server is running (PID: $$(cat .server.pid))"; \
-			ps -p $$(cat .server.pid) -o pid,ppid,%cpu,%mem,etime,cmd; \
+	@# Check PM2
+	@if command -v pm2 >/dev/null 2>&1; then \
+		if pm2 list 2>/dev/null | grep -q webportaal_pagaaierTools 2>/dev/null; then \
+			echo "🟢 Running with PM2:"; \
+			pm2 list | grep webportaal_pagaaierTools || true; \
+		fi; \
+	fi
+	@# Check PID file
+	@if [ -f .server.pid ]; then \
+		if ps -p `cat .server.pid` >/dev/null 2>&1; then \
+			echo "🟢 Running (PID: `cat .server.pid`)"; \
+			ps -p `cat .server.pid` -o pid,%cpu,%mem,etime,cmd --no-headers 2>/dev/null || true; \
 		else \
-			echo "❌ Server is not running (stale PID file)"; \
+			echo "🔴 Not running (stale PID file)"; \
 			rm -f .server.pid; \
-		fi \
+		fi; \
+	fi
+	@# Check by process name
+	@NODE_PID=`pgrep -f "node.*server.js" | head -1`; \
+	if [ -n "$$NODE_PID" ]; then \
+		echo "🟢 Node server found (PID: $$NODE_PID)"; \
+		ps -p $$NODE_PID -o pid,%cpu,%mem,etime,cmd --no-headers 2>/dev/null || true; \
 	else \
-		if pgrep -f "node server.js" > /dev/null; then \
-			echo "✅ Server is running:"; \
-			ps aux | grep "[n]ode server.js"; \
-		else \
-			echo "❌ Server is not running"; \
-		fi \
+		if [ ! -f .server.pid ]; then \
+			echo "🔴 Server is not running"; \
+		fi; \
+	fi
+	@echo ""
+	@# Check port
+	@PORT=`grep -E '^PORT=' .env 2>/dev/null | cut -d '=' -f2 || echo 9344`; \
+	echo "🔌 Port $$PORT:"; \
+	if lsof -i :$$PORT >/dev/null 2>&1; then \
+		echo "🟢 In use"; \
+		lsof -i :$$PORT 2>/dev/null | tail -n +2 || true; \
+	else \
+		echo "🔴 Not in use"; \
 	fi
 
 # ==============================================================================
@@ -337,3 +376,80 @@ info:
 	@echo "  Local:     http://localhost:$$(grep -E '^PORT=' .env 2>/dev/null | cut -d '=' -f2 || echo 9344)"
 	@echo "  Production: http://pagaaier.school"
 	@echo "  Admin:     http://pagaaier.school/admin"
+
+# ==============================================================================
+# PM2 Advanced Management
+# ==============================================================================
+
+pm2-status:
+	@echo "📊 PM2 Process Status:"
+	@pm2 list
+
+pm2-logs:
+	@echo "📋 PM2 Logs (streaming):"
+	@pm2 logs webportaal_pagaaierTools
+
+pm2-monit:
+	@echo "📈 Opening PM2 Monitor..."
+	@pm2 monit
+
+pm2-restart:
+	@echo "🔄 Restarting with PM2..."
+	@pm2 restart webportaal_pagaaierTools || make start
+
+pm2-reload:
+	@echo "🔄 Reloading (zero-downtime)..."
+	@pm2 reload webportaal_pagaaierTools
+
+pm2-startup:
+	@echo "⚙️  Configuring PM2 startup..."
+	@pm2 startup
+	@echo ""
+	@echo "⚠️  Run the command shown above, then:"
+	@echo "   make pm2-save"
+
+pm2-save:
+	@echo "💾 Saving PM2 process list..."
+	@pm2 save
+
+# ==============================================================================
+# Development Helpers
+# ==============================================================================
+
+tail:
+	@echo "📜 Tailing logs..."
+	@tail -f logs/server.log 2>/dev/null || echo "No logs found. Server not running or using PM2."
+
+watch:
+	@echo "👀 Watching server logs..."
+	@if command -v pm2 > /dev/null && pm2 list | grep -q webportaal_pagaaierTools; then \
+		pm2 logs webportaal_pagaaierTools --lines 50; \
+	else \
+		tail -f logs/server.log; \
+	fi
+
+kill-port:
+	@echo "⚠️  Killing processes on configured port..."
+	@PORT=$$(grep -E '^PORT=' .env 2>/dev/null | cut -d '=' -f2 || echo 9344); \
+	echo "Killing processes on port $$PORT..."; \
+	lsof -ti:$$PORT | xargs kill -9 2>/dev/null || echo "No processes found on port $$PORT"
+	@echo "✅ Done"
+
+# Quick deploy with backup
+deploy: backup stop install start
+	@echo "🚀 Deployment complete!"
+	@sleep 2
+	@make status
+
+# Complete reset (dangerous!)
+reset: clean-all
+	@echo "⚠️  WARNING: This will remove the database!"
+	@echo "❓ Are you sure? Type 'yes' to continue:"
+	@read confirm; \
+	if [ "$$confirm" = "yes" ]; then \
+		rm -f portaal.db portaal.db.before-restore; \
+		echo "✅ Database removed"; \
+		echo "   Run 'make setup && make start' to reinitialize"; \
+	else \
+		echo "❌ Reset cancelled"; \
+	fi

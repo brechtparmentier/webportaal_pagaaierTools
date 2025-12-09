@@ -85,8 +85,8 @@ function extractPortFromUrl(url) {
 
 /**
  * Check status of all URLs in a project
- * @param {Array<{type: string, url: string, label?: string}>} urls - Project URLs from database
- * @returns {Promise<Array<{type: string, url: string, label: string, port: number|null, online: boolean}>>}
+ * @param {Array<{type: string, url: string, label?: string, network?: string}>} urls - Project URLs from database
+ * @returns {Promise<Array<{type: string, url: string, label: string, port: number|null, online: boolean, network?: string}>>}
  */
 async function checkProjectUrls(urls) {
   if (!Array.isArray(urls) || urls.length === 0) {
@@ -98,9 +98,21 @@ async function checkProjectUrls(urls) {
       const port = extractPortFromUrl(urlObj.url);
       let online = false;
 
-      // Only check local ports
-      if (port && urlObj.url.includes('localhost')) {
-        online = await checkPort(port);
+      // Check if URL contains a local/VPN/LAN IP or localhost
+      if (port) {
+        try {
+          // Extract hostname from URL
+          const urlParsed = new URL(urlObj.url);
+          const hostname = urlParsed.hostname;
+
+          // Check port on the actual hostname (localhost, VPN IP, or LAN IP)
+          online = await checkPort(port, hostname);
+        } catch (error) {
+          // Fallback: check if it's a localhost URL
+          if (urlObj.url.includes('localhost') || urlObj.url.includes('127.0.0.1')) {
+            online = await checkPort(port, 'localhost');
+          }
+        }
       }
 
       return {
@@ -108,7 +120,8 @@ async function checkProjectUrls(urls) {
         url: urlObj.url,
         label: urlObj.label || urlObj.type || 'URL',
         port,
-        online
+        online,
+        network: urlObj.network
       };
     })
   );

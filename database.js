@@ -26,13 +26,23 @@ function initDatabase() {
       id INTEGER PRIMARY KEY AUTOINCREMENT,
       name TEXT NOT NULL,
       description TEXT,
-      directory_path TEXT NOT NULL,
+      directory_path TEXT NOT NULL UNIQUE,
       port INTEGER NOT NULL,
       enabled BOOLEAN DEFAULT 1,
       setup_type TEXT,
       urls TEXT,
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+    )
+  `);
+
+  // Verwijder duplicaten op basis van directory_path (behoud oudste)
+  db.exec(`
+    DELETE FROM projects
+    WHERE id NOT IN (
+      SELECT MIN(id)
+      FROM projects
+      GROUP BY directory_path
     )
   `);
 
@@ -98,8 +108,9 @@ function getQueries() {
     getAllProjects: db.prepare('SELECT * FROM projects ORDER BY name'),
     getEnabledProjects: db.prepare('SELECT * FROM projects WHERE enabled = 1 ORDER BY name'),
     getProjectById: db.prepare('SELECT * FROM projects WHERE id = ?'),
+    getProjectByPath: db.prepare('SELECT * FROM projects WHERE directory_path = ?'),
     createProject: db.prepare(`
-      INSERT INTO projects (name, description, directory_path, port, enabled, setup_type, urls)
+      INSERT OR REPLACE INTO projects (name, description, directory_path, port, enabled, setup_type, urls)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `),
     updateProject: db.prepare(`
