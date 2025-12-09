@@ -1,3 +1,6 @@
+// Load environment variables first
+require('dotenv').config();
+
 const express = require('express');
 const session = require('express-session');
 const bodyParser = require('body-parser');
@@ -9,7 +12,12 @@ const { scanDirectory, importFromJson, exportToJson } = require('./projectScanne
 const { checkProjectUrls } = require('./portChecker');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+
+// Configuration from environment variables
+const PORT = parseInt(process.env.PORT || process.env.PORT_BACKEND || '9344');
+const SESSION_SECRET = process.env.SESSION_SECRET || 'pagaaiertools-secret-key-2024-CHANGE-THIS';
+const SESSION_MAX_AGE = parseInt(process.env.SESSION_MAX_AGE || '86400000'); // 24 hours
+const DEFAULT_PROJECT_PORT = parseInt(process.env.DEFAULT_PROJECT_PORT || '3000');
 
 // Initialiseer database
 initDatabase();
@@ -21,10 +29,10 @@ const queries = getQueries();
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 app.use(session({
-  secret: 'pagaaiertools-secret-key-2024',
+  secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
-  cookie: { secure: false, maxAge: 24 * 60 * 60 * 1000 } // 24 uur
+  cookie: { secure: false, maxAge: SESSION_MAX_AGE }
 }));
 
 // View engine setup
@@ -290,7 +298,7 @@ app.post('/admin/import-scanned', requireAuth, (req, res) => {
     for (const index of selectedIndices) {
       const project = scannedProjects[parseInt(index)];
       if (project) {
-        const port = project.ports && project.ports.length > 0 ? project.ports[0] : 3000;
+        const port = project.ports && project.ports.length > 0 ? project.ports[0] : DEFAULT_PROJECT_PORT;
         const urlsJson = JSON.stringify(project.urls);
 
         queries.createProject.run(
@@ -439,8 +447,8 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`\nAdmin panel:`);
   console.log(`  http://pagaaier.school/admin`);
   console.log(`\nDefault login:`);
-  console.log(`  Username: brecht`);
-  console.log(`  Password: He33e-8620_;`);
+  console.log(`  Username: ${process.env.ADMIN_USERNAME || 'admin'}`);
+  console.log(`  Password: ${process.env.ADMIN_PASSWORD || '(set in .env file)'}`);
   console.log(`\nNOTE: Nginx draait op poort 80 en forwarded naar deze app op poort ${PORT}`);
   console.log(`      DNS server (dnsmasq) resolves *.school domeinen naar dit IP`);
   console.log(`===========================================\n`);

@@ -1,8 +1,12 @@
+// Load environment variables
+require('dotenv').config();
+
 const Database = require('better-sqlite3');
 const bcrypt = require('bcrypt');
 const path = require('path');
 
-const db = new Database(path.join(__dirname, 'portaal.db'));
+const dbPath = process.env.DB_PATH || path.join(__dirname, 'portaal.db');
+const db = new Database(dbPath);
 
 // Initialiseer database schema
 function initDatabase() {
@@ -33,13 +37,16 @@ function initDatabase() {
   `);
 
   // Check of default admin user bestaat
-  const adminExists = db.prepare('SELECT COUNT(*) as count FROM users WHERE username = ?').get('brecht');
+  const adminUsername = process.env.ADMIN_USERNAME || 'admin';
+  const adminPassword = process.env.ADMIN_PASSWORD || 'change-me-please';
+
+  const adminExists = db.prepare('SELECT COUNT(*) as count FROM users WHERE username = ?').get(adminUsername);
 
   if (adminExists.count === 0) {
     // Maak default admin user
-    const passwordHash = bcrypt.hashSync('He33e-8620_;', 10);
-    db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)').run('brecht', passwordHash);
-    console.log('Default admin user created: brecht');
+    const passwordHash = bcrypt.hashSync(adminPassword, 10);
+    db.prepare('INSERT INTO users (username, password_hash) VALUES (?, ?)').run(adminUsername, passwordHash);
+    console.log(`Default admin user created: ${adminUsername}`);
   }
 
   // Check of er projecten zijn, zo niet, voeg de standaard projecten toe

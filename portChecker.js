@@ -1,13 +1,20 @@
+// Load environment variables
+require('dotenv').config();
+
 const net = require('net');
+
+// Configuration from environment
+const DEFAULT_HOST = process.env.DEFAULT_HOST || 'localhost';
+const PORT_CHECK_TIMEOUT = parseInt(process.env.PORT_CHECK_TIMEOUT || '1000');
 
 /**
  * Check if a port is open/listening
  * @param {number} port - Port number to check
- * @param {string} host - Host to check (default: localhost)
- * @param {number} timeout - Timeout in ms (default: 1000)
+ * @param {string} host - Host to check (default from env)
+ * @param {number} timeout - Timeout in ms (default from env)
  * @returns {Promise<boolean>} True if port is open, false otherwise
  */
-function checkPort(port, host = 'localhost', timeout = 1000) {
+function checkPort(port, host = DEFAULT_HOST, timeout = PORT_CHECK_TIMEOUT) {
   return new Promise((resolve) => {
     const socket = new net.Socket();
 
