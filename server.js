@@ -7,9 +7,9 @@ const bodyParser = require('body-parser');
 const path = require('path');
 const bcrypt = require('bcrypt');
 const { createProxyMiddleware } = require('http-proxy-middleware');
-const { initDatabase, getQueries } = require('./database');
+const { initDatabase, getQueries, db } = require('./database');
 const { scanDirectory, importFromJson, exportToJson } = require('./projectScanner');
-const { checkProjectUrls } = require('./portChecker');
+const { checkProjectUrls, getCacheStats } = require('./portChecker');
 
 const app = express();
 
@@ -121,6 +121,49 @@ function expandProjectUrls(urls) {
 }
 
 // Routes
+
+// Health check endpoint (public, for monitoring)
+app.get('/health', (req, res) => {
+  try {
+    // Check database connection
+    const dbCheck = db.prepare('SELECT 1 as healthy').get();
+
+    // Get basic statistics
+    const projectCount = queries.getAllProjects.all().length;
+    const enabledProjectCount = queries.getEnabledProjects.all().length;
+
+    // Get cache stats
+    const cacheStats = getCacheStats();
+
+    // Get uptime
+    const uptime = process.uptime();
+
+    res.status(200).json({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      uptime: Math.floor(uptime),
+      database: {
+        connected: dbCheck.healthy === 1,
+        projects: {
+          total: projectCount,
+          enabled: enabledProjectCount
+        }
+      },
+      cache: {
+        size: cacheStats.size,
+        ttl: parseInt(process.env.PORT_STATUS_CACHE_TTL || '5000')
+      },
+      version: process.env.npm_package_version || '1.0.0'
+    });
+  } catch (error) {
+    console.error('Health check failed:', error);
+    res.status(503).json({
+      status: 'unhealthy',
+      timestamp: new Date().toISOString(),
+      error: error.message
+    });
+  }
+});
 
 // Home page - simple public view with online LAN/VPN projects
 app.get('/', async (req, res) => {

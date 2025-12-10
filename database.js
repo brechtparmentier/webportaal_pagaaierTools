@@ -37,6 +37,14 @@ function initDatabase() {
     )
   `);
 
+  // Create indices for better query performance
+  db.exec(`
+    CREATE INDEX IF NOT EXISTS idx_projects_enabled ON projects(enabled);
+    CREATE INDEX IF NOT EXISTS idx_projects_name ON projects(name);
+    CREATE INDEX IF NOT EXISTS idx_projects_port ON projects(port);
+    CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+  `);
+
   // Verwijder duplicaten op basis van directory_path (behoud oudste)
   db.exec(`
     DELETE FROM projects
