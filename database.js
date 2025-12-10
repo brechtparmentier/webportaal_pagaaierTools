@@ -31,6 +31,7 @@ function initDatabase() {
       enabled BOOLEAN DEFAULT 1,
       setup_type TEXT,
       urls TEXT,
+      frontend_path TEXT DEFAULT '/',
       created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
     )
@@ -115,7 +116,7 @@ function getQueries() {
     `),
     updateProject: db.prepare(`
       UPDATE projects
-      SET name = ?, description = ?, directory_path = ?, port = ?, enabled = ?, setup_type = ?, urls = ?, updated_at = CURRENT_TIMESTAMP
+      SET name = ?, description = ?, directory_path = ?, port = ?, enabled = ?, setup_type = ?, urls = ?, frontend_path = ?, updated_at = CURRENT_TIMESTAMP
       WHERE id = ?
     `),
     deleteProject: db.prepare('DELETE FROM projects WHERE id = ?'),

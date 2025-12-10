@@ -52,6 +52,12 @@
             <input type="text" id="directory_path" name="directory_path" required value="<%= project.directory_path %>">
           </div>
 
+          <div class="form-group">
+            <label for="frontend_path">Frontend Pad (bijv. /docs voor FastAPI)</label>
+            <input type="text" id="frontend_path" name="frontend_path" value="<%= project.frontend_path || '/' %>" placeholder="/">
+            <small style="color: #666;">Laat leeg of "/" voor root. Gebruik "/docs" voor FastAPI Swagger UI.</small>
+          </div>
+
           <div class="form-row">
             <div class="form-group">
               <label for="setup_type">Setup Type</label>

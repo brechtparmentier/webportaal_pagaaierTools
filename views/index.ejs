@@ -3,61 +3,26 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Webportaal PagaaierTools</title>
+  <title>Beschikbare Projecten</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
   <div class="main-container">
     <header class="main-header">
-      <h1>Webportaal PagaaierTools</h1>
-      <p class="subtitle">Toegang tot beschikbare projecten</p>
-      <a href="/admin" class="admin-link">Admin</a>
+      <h1>Beschikbare Projecten</h1>
+      <p class="subtitle">Klik op een project om te openen</p>
+      <a href="/admin/login" class="admin-link">Admin Login</a>
     </header>
-
-    <!-- Filter Controls -->
-    <div class="filter-controls">
-      <div class="filter-group">
-        <span class="filter-label">Toon netwerken:</span>
-        <button class="filter-btn active" data-filter="localhost" title="Toon localhost URLs">
-          🖥️ Localhost
-        </button>
-        <button class="filter-btn active" data-filter="lan" title="Toon LAN URLs">
-          🌐 LAN
-        </button>
-        <button class="filter-btn active" data-filter="vpn" title="Toon VPN URLs">
-          🔒 VPN
-        </button>
-      </div>
-      <div class="filter-group">
-        <span class="filter-label">Omgeving:</span>
-        <button class="filter-btn active" data-filter="production" title="Toon production/backend URLs">
-          🔧 Backend
-        </button>
-        <button class="filter-btn active" data-filter="development" title="Toon development/frontend URLs">
-          💻 Frontend
-        </button>
-      </div>
-      <div class="filter-group">
-        <span class="filter-label">Status:</span>
-        <button class="filter-btn active" data-filter="offline" title="Toon offline projecten">
-          ○ Offline
-        </button>
-      </div>
-    </div>
 
     <main class="main-content">
       <% if (projects.length === 0) { %>
         <div class="no-projects-message">
-          <h2>Geen actieve projecten</h2>
-          <p>Er zijn momenteel geen projecten beschikbaar.</p>
-          <p><a href="/admin">Ga naar admin</a> om projecten toe te voegen.</p>
+          <h2>Geen beschikbare projecten</h2>
+          <p>Er zijn momenteel geen online projecten beschikbaar.</p>
         </div>
       <% } else { %>
         <div class="projects-grid">
-          <% projects.forEach(project => {
-            const urlsWithStatus = project.urlsWithStatus || [];
-            const hasMultipleUrls = urlsWithStatus.length > 1;
-          %>
+          <% projects.forEach(project => { %>
             <div class="project-card">
               <div class="project-card-header">
                 <h2><%= project.name %></h2>
@@ -69,67 +34,15 @@
                 <p class="project-description">
                   <%= project.description || 'Geen beschrijving beschikbaar' %>
                 </p>
-
-                <% if (hasMultipleUrls) { %>
-                  <div class="project-urls">
-                    <strong>Beschikbare omgevingen:</strong>
-                    <div class="url-list">
-                      <% urlsWithStatus.forEach(urlObj => { %>
-                        <% if (showOfflineProjects || urlObj.online) { %>
-                          <div class="url-item <%= !urlObj.online && (urlObj.network === 'lan' || urlObj.network === 'vpn') ? 'needs-attention' : '' %>">
-                            <div class="url-info">
-                              <span class="url-label"><%= urlObj.label || urlObj.type %></span>
-                              <% if (urlObj.network && urlObj.network !== 'external') { %>
-                                <span class="network-badge <%= urlObj.network %>">
-                                  <%= urlObj.network === 'localhost' ? '🖥️' : urlObj.network === 'lan' ? '🌐' : '🔒' %>
-                                  <%= urlObj.network.toUpperCase() %>
-                                </span>
-                              <% } %>
-                              <span class="url-type-badge <%= urlObj.type %>"><%= urlObj.type %></span>
-                              <% if (urlObj.port) { %>
-                                <span class="url-port">port <%= urlObj.port %></span>
-                              <% } %>
-                              <% if (!urlObj.online && (urlObj.network === 'lan' || urlObj.network === 'vpn')) { %>
-                                <span class="warning-badge" title="Deze URL werkt niet - configuratie aanpassen nodig">
-                                  ⚠️ Configuratie vereist
-                                </span>
-                              <% } %>
-                            </div>
-                            <div class="url-actions">
-                              <span class="status-indicator <%= urlObj.online ? 'online' : 'offline' %>">
-                                <%= urlObj.online ? '● Online' : '○ Offline' %>
-                              </span>
-                              <a href="<%= urlObj.url %>" class="btn btn-small url-btn <%= urlObj.type %>" target="_blank">
-                                Open
-                              </a>
-                            </div>
-                          </div>
-                        <% } %>
-                      <% }); %>
-                    </div>
-                  </div>
-                <% } else if (urlsWithStatus.length === 1) { %>
-                  <div class="project-info">
-                    <span class="project-port">Poort: <%= project.port %></span>
-                    <% if (urlsWithStatus[0].url.includes('localhost')) { %>
-                      <span class="status-indicator <%= urlsWithStatus[0].online ? 'online' : 'offline' %>">
-                        <%= urlsWithStatus[0].online ? '● Online' : '○ Offline' %>
-                      </span>
-                    <% } %>
-                  </div>
-                <% } else { %>
-                  <div class="project-info">
-                    <span class="project-port">Poort: <%= project.port %></span>
-                  </div>
-                <% } %>
+                <div class="project-info">
+                  <% if (project.primaryUrl) { %>
+                    <span class="status-indicator online">● Online</span>
+                  <% } %>
+                </div>
               </div>
               <div class="project-card-footer">
-                <% if (hasMultipleUrls) { %>
-                  <a href="/project/<%= project.id %>" class="btn btn-secondary" target="_blank">
-                    Open via Proxy (port <%= project.port %>)
-                  </a>
-                <% } else { %>
-                  <a href="/project/<%= project.id %>" class="btn btn-primary" target="_blank">
+                <% if (project.primaryUrl) { %>
+                  <a href="<%= project.primaryUrl %>" class="btn btn-primary" target="_blank">
                     Open Project
                   </a>
                 <% } %>
@@ -144,116 +57,5 @@
       <p>&copy; 2024 PagaaierTools - Webportaal voor schoolprojecten</p>
     </footer>
   </div>
-
-  <script>
-    // Filter functionality
-    document.addEventListener('DOMContentLoaded', () => {
-      const filterButtons = document.querySelectorAll('.filter-btn');
-      const activeFilters = {
-        localhost: true,
-        lan: true,
-        vpn: true,
-        production: true,
-        development: true,
-        offline: true
-      };
-
-      function updateVisibility() {
-        // Update project cards
-        const projectCards = document.querySelectorAll('.project-card');
-        
-        projectCards.forEach(card => {
-          const urlItems = card.querySelectorAll('.url-item');
-          let hasVisibleUrl = false;
-          let hasOnlineUrl = false;
-
-          urlItems.forEach(item => {
-            const networkBadge = item.querySelector('.network-badge');
-            const statusIndicator = item.querySelector('.status-indicator');
-            const typeBadge = item.querySelector('.url-type-badge');
-            const isOnline = statusIndicator && statusIndicator.classList.contains('online');
-            
-            if (isOnline) hasOnlineUrl = true;
-
-            let shouldShow = true;
-
-            // Check network filters
-            if (networkBadge) {
-              const network = networkBadge.classList.contains('localhost') ? 'localhost' :
-                            networkBadge.classList.contains('lan') ? 'lan' :
-                            networkBadge.classList.contains('vpn') ? 'vpn' : null;
-              
-              if (network && !activeFilters[network]) {
-                shouldShow = false;
-              }
-            }
-
-            // Check type filters (production/development)
-            if (typeBadge) {
-              const hasProduction = typeBadge.classList.contains('production') || 
-                                   typeBadge.classList.contains('prod');
-              const hasDevelopment = typeBadge.classList.contains('development') || 
-                                    typeBadge.classList.contains('dev');
-              const isMain = typeBadge.classList.contains('main');
-              
-              // Main URLs count as both
-              if (!isMain) {
-                if (hasProduction && !activeFilters.production) {
-                  shouldShow = false;
-                }
-                if (hasDevelopment && !activeFilters.development) {
-                  shouldShow = false;
-                }
-              }
-            }
-
-            // Check offline filter
-            if (!isOnline && !activeFilters.offline) {
-              shouldShow = false;
-            }
-
-            if (shouldShow) {
-              item.style.display = '';
-              hasVisibleUrl = true;
-            } else {
-              item.style.display = 'none';
-            }
-          });
-
-          // Hide project card if offline and offline filter is off
-          if (!hasOnlineUrl && !activeFilters.offline) {
-            card.style.display = 'none';
-          } else if (hasVisibleUrl) {
-            card.style.display = '';
-          } else {
-            // No visible URLs, hide card
-            card.style.display = 'none';
-          }
-        });
-
-        // Update button states
-        filterButtons.forEach(btn => {
-          const filter = btn.dataset.filter;
-          if (activeFilters[filter]) {
-            btn.classList.add('active');
-          } else {
-            btn.classList.remove('active');
-          }
-        });
-      }
-
-      // Add click handlers
-      filterButtons.forEach(btn => {
-        btn.addEventListener('click', () => {
-          const filter = btn.dataset.filter;
-          activeFilters[filter] = !activeFilters[filter];
-          updateVisibility();
-        });
-      });
-
-      // Initial visibility update
-      updateVisibility();
-    });
-  </script>
 </body>
 </html>

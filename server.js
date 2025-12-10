@@ -122,8 +122,49 @@ function expandProjectUrls(urls) {
 
 // Routes
 
-// Home page - toon alle beschikbare projecten
+// Home page - simple public view with online LAN/VPN projects
 app.get('/', async (req, res) => {
+  try {
+    let projects = queries.getEnabledProjects.all();
+
+    // Process each project
+    const processedProjects = [];
+    for (const project of projects) {
+      const urls = project.urls ? JSON.parse(project.urls) : [];
+
+      // Expand URLs
+      const expandedUrls = expandProjectUrls(urls);
+
+      // Check port status
+      const urlsWithStatus = await checkProjectUrls(expandedUrls);
+
+      // Find first online LAN or VPN URL (prefer LAN)
+      const lanUrl = urlsWithStatus.find(u => u.online && u.network === 'lan');
+      const vpnUrl = urlsWithStatus.find(u => u.online && u.network === 'vpn');
+
+      const primaryUrl = lanUrl || vpnUrl;
+
+      if (primaryUrl) {
+        // Append frontend_path if configured
+        const frontendPath = project.frontend_path || '/';
+        const fullUrl = primaryUrl.url.replace(/\/$/, '') + (frontendPath === '/' ? '' : frontendPath);
+
+        processedProjects.push({
+          ...project,
+          primaryUrl: fullUrl
+        });
+      }
+    } res.render('index', {
+      projects: processedProjects
+    });
+  } catch (error) {
+    console.error('Error loading projects:', error);
+    res.status(500).send('Error loading projects');
+  }
+});
+
+// Projects overview with filters (admin view)
+app.get('/admin/projects', requireAuth, async (req, res) => {
   try {
     let projects = queries.getEnabledProjects.all();
 
@@ -146,7 +187,8 @@ app.get('/', async (req, res) => {
       projects = projects.filter(p => p.hasOnlineUrl);
     }
 
-    res.render('index', {
+    res.render('projects', {
+      username: req.session.username,
       projects,
       showOfflineProjects: SHOW_OFFLINE_PROJECTS
     });
@@ -280,7 +322,7 @@ app.get('/admin/projects/:id/edit', requireAuth, (req, res) => {
 // Update project
 app.post('/admin/projects/:id/edit', requireAuth, (req, res) => {
   const projectId = req.params.id;
-  const { name, description, directory_path, port, setup_type, enabled, urls } = req.body;
+  const { name, description, directory_path, port, setup_type, enabled, urls, frontend_path } = req.body;
 
   try {
     queries.updateProject.run(
@@ -291,6 +333,7 @@ app.post('/admin/projects/:id/edit', requireAuth, (req, res) => {
       enabled === 'on' ? 1 : 0,
       setup_type || 'manual',
       urls || JSON.stringify([]),
+      frontend_path || '/',
       projectId
     );
     res.redirect('/admin');
@@ -404,6 +447,7 @@ app.post('/admin/import-scanned', requireAuth, (req, res) => {
             existing.enabled,
             project.setup_type || existing.setup_type || 'unknown',
             urlsJson,
+            existing.frontend_path || '/',
             existing.id
           );
           updated++;
@@ -471,6 +515,7 @@ app.post('/admin/import-json', requireAuth, (req, res) => {
           project.enabled !== undefined ? project.enabled : existing.enabled,
           project.setup_type || existing.setup_type || 'unknown',
           urlsJson,
+          project.frontend_path || existing.frontend_path || '/',
           existing.id
         );
         updated++;
