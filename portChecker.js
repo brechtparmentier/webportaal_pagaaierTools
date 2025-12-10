@@ -1,13 +1,74 @@
+// Load environment variables
+require('dotenv').config();
+
 const net = require('net');
 
+// Configuration from environment
+const DEFAULT_HOST = process.env.DEFAULT_HOST || 'localhost';
+const PORT_CHECK_TIMEOUT = parseInt(process.env.PORT_CHECK_TIMEOUT || '1000');
+const PORT_STATUS_CACHE_TTL = parseInt(process.env.PORT_STATUS_CACHE_TTL || '5000'); // 5 seconds default
+
+// In-memory cache for port status checks
+// Structure: { 'host:port': { online: boolean, timestamp: number } }
+const portStatusCache = new Map();
+
 /**
- * Check if a port is open/listening
+ * Get cached port status if available and not expired
+ * @param {string} host - Host to check
  * @param {number} port - Port number to check
- * @param {string} host - Host to check (default: localhost)
- * @param {number} timeout - Timeout in ms (default: 1000)
+ * @returns {boolean|null} Cached status or null if not in cache/expired
+ */
+function getCachedPortStatus(host, port) {
+  const cacheKey = `${host}:${port}`;
+  const cached = portStatusCache.get(cacheKey);
+
+  if (!cached) {
+    return null;
+  }
+
+  const now = Date.now();
+  const age = now - cached.timestamp;
+
+  if (age > PORT_STATUS_CACHE_TTL) {
+    // Cache expired, remove it
+    portStatusCache.delete(cacheKey);
+    return null;
+  }
+
+  return cached.online;
+}
+
+/**
+ * Set cached port status
+ * @param {string} host - Host
+ * @param {number} port - Port number
+ * @param {boolean} online - Port status
+ */
+function setCachedPortStatus(host, port, online) {
+  const cacheKey = `${host}:${port}`;
+  portStatusCache.set(cacheKey, {
+    online,
+    timestamp: Date.now()
+  });
+}
+
+/**
+ * Check if a port is open/listening (with caching)
+ * @param {number} port - Port number to check
+ * @param {string} host - Host to check (default from env)
+ * @param {number} timeout - Timeout in ms (default from env)
+ * @param {boolean} useCache - Whether to use cache (default true)
  * @returns {Promise<boolean>} True if port is open, false otherwise
  */
-function checkPort(port, host = 'localhost', timeout = 1000) {
+function checkPort(port, host = DEFAULT_HOST, timeout = PORT_CHECK_TIMEOUT, useCache = true) {
+  // Check cache first if enabled
+  if (useCache) {
+    const cached = getCachedPortStatus(host, port);
+    if (cached !== null) {
+      return Promise.resolve(cached);
+    }
+  }
+
   return new Promise((resolve) => {
     const socket = new net.Socket();
 
@@ -15,16 +76,19 @@ function checkPort(port, host = 'localhost', timeout = 1000) {
 
     socket.on('connect', () => {
       socket.destroy();
+      setCachedPortStatus(host, port, true);
       resolve(true);
     });
 
     socket.on('timeout', () => {
       socket.destroy();
+      setCachedPortStatus(host, port, false);
       resolve(false);
     });
 
     socket.on('error', () => {
       socket.destroy();
+      setCachedPortStatus(host, port, false);
       resolve(false);
     });
 
@@ -78,8 +142,8 @@ function extractPortFromUrl(url) {
 
 /**
  * Check status of all URLs in a project
- * @param {Array<{type: string, url: string, label?: string}>} urls - Project URLs from database
- * @returns {Promise<Array<{type: string, url: string, label: string, port: number|null, online: boolean}>>}
+ * @param {Array<{type: string, url: string, label?: string, network?: string}>} urls - Project URLs from database
+ * @returns {Promise<Array<{type: string, url: string, label: string, port: number|null, online: boolean, network?: string}>>}
  */
 async function checkProjectUrls(urls) {
   if (!Array.isArray(urls) || urls.length === 0) {
@@ -91,9 +155,21 @@ async function checkProjectUrls(urls) {
       const port = extractPortFromUrl(urlObj.url);
       let online = false;
 
-      // Only check local ports
-      if (port && urlObj.url.includes('localhost')) {
-        online = await checkPort(port);
+      // Check if URL contains a local/VPN/LAN IP or localhost
+      if (port) {
+        try {
+          // Extract hostname from URL
+          const urlParsed = new URL(urlObj.url);
+          const hostname = urlParsed.hostname;
+
+          // Check port on the actual hostname (localhost, VPN IP, or LAN IP)
+          online = await checkPort(port, hostname);
+        } catch (error) {
+          // Fallback: check if it's a localhost URL
+          if (urlObj.url.includes('localhost') || urlObj.url.includes('127.0.0.1')) {
+            online = await checkPort(port, 'localhost');
+          }
+        }
       }
 
       return {
@@ -101,7 +177,8 @@ async function checkProjectUrls(urls) {
         url: urlObj.url,
         label: urlObj.label || urlObj.type || 'URL',
         port,
-        online
+        online,
+        network: urlObj.network
       };
     })
   );
@@ -109,9 +186,40 @@ async function checkProjectUrls(urls) {
   return results;
 }
 
+/**
+ * Clear the port status cache (useful for testing or forced refresh)
+ */
+function clearCache() {
+  portStatusCache.clear();
+}
+
+/**
+ * Get cache statistics
+ * @returns {{size: number, entries: Array<{key: string, online: boolean, age: number}>}}
+ */
+function getCacheStats() {
+  const now = Date.now();
+  const entries = [];
+
+  for (const [key, value] of portStatusCache.entries()) {
+    entries.push({
+      key,
+      online: value.online,
+      age: now - value.timestamp
+    });
+  }
+
+  return {
+    size: portStatusCache.size,
+    entries
+  };
+}
+
 module.exports = {
   checkPort,
   checkMultiplePorts,
   extractPortFromUrl,
-  checkProjectUrls
+  checkProjectUrls,
+  clearCache,
+  getCacheStats
 };

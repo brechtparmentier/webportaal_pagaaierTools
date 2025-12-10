@@ -3,30 +3,26 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Webportaal PagaaierTools</title>
+  <title>Beschikbare Projecten</title>
   <link rel="stylesheet" href="/static/style.css">
 </head>
 <body>
   <div class="main-container">
     <header class="main-header">
-      <h1>Webportaal PagaaierTools</h1>
-      <p class="subtitle">Toegang tot beschikbare projecten</p>
+      <h1>Beschikbare Projecten</h1>
+      <p class="subtitle">Klik op een project om te openen</p>
       <a href="/admin" class="admin-link">Admin</a>
     </header>
 
     <main class="main-content">
       <% if (projects.length === 0) { %>
         <div class="no-projects-message">
-          <h2>Geen actieve projecten</h2>
-          <p>Er zijn momenteel geen projecten beschikbaar.</p>
-          <p><a href="/admin">Ga naar admin</a> om projecten toe te voegen.</p>
+          <h2>Geen beschikbare projecten</h2>
+          <p>Er zijn momenteel geen online projecten beschikbaar.</p>
         </div>
       <% } else { %>
         <div class="projects-grid">
-          <% projects.forEach(project => {
-            const urlsWithStatus = project.urlsWithStatus || [];
-            const hasMultipleUrls = urlsWithStatus.length > 1;
-          %>
+          <% projects.forEach(project => { %>
             <div class="project-card">
               <div class="project-card-header">
                 <h2><%= project.name %></h2>
@@ -38,56 +34,15 @@
                 <p class="project-description">
                   <%= project.description || 'Geen beschrijving beschikbaar' %>
                 </p>
-
-                <% if (hasMultipleUrls) { %>
-                  <div class="project-urls">
-                    <strong>Beschikbare omgevingen:</strong>
-                    <div class="url-list">
-                      <% urlsWithStatus.forEach(urlObj => { %>
-                        <div class="url-item">
-                          <div class="url-info">
-                            <span class="url-label"><%= urlObj.label || urlObj.type %></span>
-                            <span class="url-type-badge <%= urlObj.type %>"><%= urlObj.type %></span>
-                            <% if (urlObj.port) { %>
-                              <span class="url-port">port <%= urlObj.port %></span>
-                            <% } %>
-                          </div>
-                          <div class="url-actions">
-                            <% if (urlObj.url.includes('localhost') && urlObj.port) { %>
-                              <span class="status-indicator <%= urlObj.online ? 'online' : 'offline' %>">
-                                <%= urlObj.online ? '● Online' : '○ Offline' %>
-                              </span>
-                            <% } %>
-                            <a href="<%= urlObj.url %>" class="btn btn-small url-btn <%= urlObj.type %>" target="_blank">
-                              Open
-                            </a>
-                          </div>
-                        </div>
-                      <% }); %>
-                    </div>
-                  </div>
-                <% } else if (urlsWithStatus.length === 1) { %>
-                  <div class="project-info">
-                    <span class="project-port">Poort: <%= project.port %></span>
-                    <% if (urlsWithStatus[0].url.includes('localhost')) { %>
-                      <span class="status-indicator <%= urlsWithStatus[0].online ? 'online' : 'offline' %>">
-                        <%= urlsWithStatus[0].online ? '● Online' : '○ Offline' %>
-                      </span>
-                    <% } %>
-                  </div>
-                <% } else { %>
-                  <div class="project-info">
-                    <span class="project-port">Poort: <%= project.port %></span>
-                  </div>
-                <% } %>
+                <div class="project-info">
+                  <% if (project.primaryUrl) { %>
+                    <span class="status-indicator online">● Online</span>
+                  <% } %>
+                </div>
               </div>
               <div class="project-card-footer">
-                <% if (hasMultipleUrls) { %>
-                  <a href="/project/<%= project.id %>" class="btn btn-secondary" target="_blank">
-                    Open via Proxy (port <%= project.port %>)
-                  </a>
-                <% } else { %>
-                  <a href="/project/<%= project.id %>" class="btn btn-primary" target="_blank">
+                <% if (project.primaryUrl) { %>
+                  <a href="<%= project.primaryUrl %>" class="btn btn-primary" target="_blank">
                     Open Project
                   </a>
                 <% } %>
@@ -99,7 +54,7 @@
     </main>
 
     <footer class="main-footer">
-      <p>&copy; 2024 PagaaierTools - Webportaal voor schoolprojecten</p>
+      <p>&copy; 2024-2025 PagaaierTools - Webportaal voor schoolprojecten</p>
     </footer>
   </div>
 </body>

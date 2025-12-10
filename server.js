@@ -1,15 +1,31 @@
+// Load environment variables first
+require('dotenv').config();
+
 const express = require('express');
 const session = require('express-session');
 const bodyParser = require('body-parser');
 const path = require('path');
 const bcrypt = require('bcrypt');
 const { createProxyMiddleware } = require('http-proxy-middleware');
-const { initDatabase, getQueries } = require('./database');
+const { initDatabase, getQueries, db } = require('./database');
 const { scanDirectory, importFromJson, exportToJson } = require('./projectScanner');
-const { checkProjectUrls } = require('./portChecker');
+const { checkProjectUrls, getCacheStats } = require('./portChecker');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
+
+// Configuration from environment variables
+const PORT = parseInt(process.env.PORT || process.env.PORT_FRONTEND || '9343');
+const SESSION_SECRET = process.env.SESSION_SECRET || 'pagaaiertools-secret-key-2024-CHANGE-THIS';
+const SESSION_MAX_AGE = parseInt(process.env.SESSION_MAX_AGE || '86400000'); // 24 hours
+const DEFAULT_PROJECT_PORT = parseInt(process.env.DEFAULT_PROJECT_PORT || '3000');
+
+// Network configuration
+const SERVER_LAN_IP = process.env.SERVER_LAN_IP || '10.46.54.180';
+const SERVER_VPN_IP = process.env.SERVER_VPN_IP || '10.0.0.9';
+const SHOW_LOCALHOST_URLS = process.env.SHOW_LOCALHOST_URLS !== 'false';
+const SHOW_LAN_URLS = process.env.SHOW_LAN_URLS !== 'false';
+const SHOW_VPN_URLS = process.env.SHOW_VPN_URLS !== 'false';
+const SHOW_OFFLINE_PROJECTS = process.env.SHOW_OFFLINE_PROJECTS !== 'false';
 
 // Initialiseer database
 initDatabase();
@@ -21,10 +37,10 @@ const queries = getQueries();
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 app.use(session({
-  secret: 'pagaaiertools-secret-key-2024',
+  secret: SESSION_SECRET,
   resave: false,
   saveUninitialized: false,
-  cookie: { secure: false, maxAge: 24 * 60 * 60 * 1000 } // 24 uur
+  cookie: { secure: false, maxAge: SESSION_MAX_AGE }
 }));
 
 // View engine setup
@@ -42,20 +58,185 @@ function requireAuth(req, res, next) {
   res.redirect('/admin/login');
 }
 
+/**
+ * Expand URLs to include localhost, LAN, and VPN variants
+ * @param {Array} urls - Original URLs from project
+ * @returns {Array} - Expanded URLs with all network variants
+ */
+function expandProjectUrls(urls) {
+  const expanded = [];
+
+  for (const urlObj of urls) {
+    const url = urlObj.url || '';
+
+    // Check if it's a localhost URL with a port
+    const localhostMatch = url.match(/https?:\/\/(?:localhost|127\.0\.0\.1):(\d+)/i);
+
+    if (localhostMatch) {
+      const port = localhostMatch[1];
+      const baseLabel = urlObj.label || urlObj.type || 'Port';
+
+      // Add localhost variant
+      if (SHOW_LOCALHOST_URLS) {
+        expanded.push({
+          ...urlObj,
+          url: `http://localhost:${port}`,
+          label: `${baseLabel} (localhost)`,
+          network: 'localhost',
+          port: parseInt(port)
+        });
+      }
+
+      // Add LAN variant
+      if (SHOW_LAN_URLS && SERVER_LAN_IP) {
+        expanded.push({
+          ...urlObj,
+          url: `http://${SERVER_LAN_IP}:${port}`,
+          label: `${baseLabel} (LAN)`,
+          network: 'lan',
+          port: parseInt(port)
+        });
+      }
+
+      // Add VPN variant
+      if (SHOW_VPN_URLS && SERVER_VPN_IP) {
+        expanded.push({
+          ...urlObj,
+          url: `http://${SERVER_VPN_IP}:${port}`,
+          label: `${baseLabel} (VPN)`,
+          network: 'vpn',
+          port: parseInt(port)
+        });
+      }
+    } else {
+      // Non-localhost URL, keep as-is
+      expanded.push({
+        ...urlObj,
+        network: 'external'
+      });
+    }
+  }
+
+  return expanded;
+}
+
 // Routes
 
-// Home page - toon alle beschikbare projecten
+// Health check endpoint (public, for monitoring)
+app.get('/health', (req, res) => {
+  try {
+    // Check database connection
+    const dbCheck = db.prepare('SELECT 1 as healthy').get();
+
+    // Get basic statistics
+    const projectCount = queries.getAllProjects.all().length;
+    const enabledProjectCount = queries.getEnabledProjects.all().length;
+
+    // Get cache stats
+    const cacheStats = getCacheStats();
+
+    // Get uptime
+    const uptime = process.uptime();
+
+    res.status(200).json({
+      status: 'healthy',
+      timestamp: new Date().toISOString(),
+      uptime: Math.floor(uptime),
+      database: {
+        connected: dbCheck.healthy === 1,
+        projects: {
+          total: projectCount,
+          enabled: enabledProjectCount
+        }
+      },
+      cache: {
+        size: cacheStats.size,
+        ttl: parseInt(process.env.PORT_STATUS_CACHE_TTL || '5000')
+      },
+      version: process.env.npm_package_version || '1.0.0'
+    });
+  } catch (error) {
+    console.error('Health check failed:', error);
+    res.status(503).json({
+      status: 'unhealthy',
+      timestamp: new Date().toISOString(),
+      error: error.message
+    });
+  }
+});
+
+// Home page - simple public view with online LAN/VPN projects
 app.get('/', async (req, res) => {
   try {
-    const projects = queries.getEnabledProjects.all();
+    let projects = queries.getEnabledProjects.all();
 
-    // Check port status for each project
+    // Process each project
+    const processedProjects = [];
     for (const project of projects) {
       const urls = project.urls ? JSON.parse(project.urls) : [];
-      project.urlsWithStatus = await checkProjectUrls(urls);
+
+      // Expand URLs
+      const expandedUrls = expandProjectUrls(urls);
+
+      // Check port status
+      const urlsWithStatus = await checkProjectUrls(expandedUrls);
+
+      // Find first online LAN or VPN URL (prefer LAN)
+      const lanUrl = urlsWithStatus.find(u => u.online && u.network === 'lan');
+      const vpnUrl = urlsWithStatus.find(u => u.online && u.network === 'vpn');
+
+      const primaryUrl = lanUrl || vpnUrl;
+
+      if (primaryUrl) {
+        // Append frontend_path if configured
+        const frontendPath = project.frontend_path || '/';
+        const fullUrl = primaryUrl.url.replace(/\/$/, '') + (frontendPath === '/' ? '' : frontendPath);
+
+        processedProjects.push({
+          ...project,
+          primaryUrl: fullUrl
+        });
+      }
     }
 
-    res.render('index', { projects });
+    res.render('index', {
+      projects: processedProjects
+    });
+  } catch (error) {
+    console.error('Error loading projects:', error);
+    res.status(500).send('Error loading projects');
+  }
+});
+
+// Projects overview with filters (admin view)
+app.get('/admin/projects', requireAuth, async (req, res) => {
+  try {
+    let projects = queries.getEnabledProjects.all();
+
+    // Process each project
+    for (const project of projects) {
+      const urls = project.urls ? JSON.parse(project.urls) : [];
+
+      // Expand URLs to include localhost, LAN, and VPN variants
+      const expandedUrls = expandProjectUrls(urls);
+
+      // Check port status for expanded URLs
+      project.urlsWithStatus = await checkProjectUrls(expandedUrls);
+
+      // Determine if project has any online URLs
+      project.hasOnlineUrl = project.urlsWithStatus.some(u => u.online);
+    }
+
+    // Filter offline projects if configured
+    if (!SHOW_OFFLINE_PROJECTS) {
+      projects = projects.filter(p => p.hasOnlineUrl);
+    }
+
+    res.render('projects', {
+      username: req.session.username,
+      projects,
+      showOfflineProjects: SHOW_OFFLINE_PROJECTS
+    });
   } catch (error) {
     console.error('Error loading projects:', error);
     res.status(500).send('Error loading projects');
@@ -186,7 +367,7 @@ app.get('/admin/projects/:id/edit', requireAuth, (req, res) => {
 // Update project
 app.post('/admin/projects/:id/edit', requireAuth, (req, res) => {
   const projectId = req.params.id;
-  const { name, description, directory_path, port, setup_type, enabled, urls } = req.body;
+  const { name, description, directory_path, port, setup_type, enabled, urls, frontend_path } = req.body;
 
   try {
     queries.updateProject.run(
@@ -197,6 +378,7 @@ app.post('/admin/projects/:id/edit', requireAuth, (req, res) => {
       enabled === 'on' ? 1 : 0,
       setup_type || 'manual',
       urls || JSON.stringify([]),
+      frontend_path || '/',
       projectId
     );
     res.redirect('/admin');
@@ -287,24 +469,52 @@ app.post('/admin/import-scanned', requireAuth, (req, res) => {
     const scannedProjects = req.session.scannedProjects || [];
     const selectedIndices = Array.isArray(selected_projects) ? selected_projects : [selected_projects];
 
+    let imported = 0;
+    let updated = 0;
+    let skipped = 0;
+
     for (const index of selectedIndices) {
       const project = scannedProjects[parseInt(index)];
       if (project) {
-        const port = project.ports && project.ports.length > 0 ? project.ports[0] : 3000;
+        // Check of project al bestaat op basis van directory_path
+        const existing = queries.getProjectByPath.get(project.directory_path);
+
+        const port = project.ports && project.ports.length > 0 ? project.ports[0] : DEFAULT_PROJECT_PORT;
         const urlsJson = JSON.stringify(project.urls);
 
-        queries.createProject.run(
-          project.name,
-          project.description || '',
-          project.directory_path,
-          port,
-          1,
-          project.setup_type || 'unknown',
-          urlsJson
-        );
+        if (existing) {
+          // Update bestaand project
+          queries.updateProject.run(
+            project.name,
+            project.description || existing.description || '',
+            project.directory_path,
+            port,
+            existing.enabled,
+            project.setup_type || existing.setup_type || 'unknown',
+            urlsJson,
+            existing.frontend_path || '/',
+            existing.id
+          );
+          updated++;
+        } else {
+          // Nieuw project toevoegen
+          queries.createProject.run(
+            project.name,
+            project.description || '',
+            project.directory_path,
+            port,
+            1,
+            project.setup_type || 'unknown',
+            urlsJson
+          );
+          imported++;
+        }
+      } else {
+        skipped++;
       }
     }
 
+    console.log(`Import complete: ${imported} new, ${updated} updated, ${skipped} skipped`);
     req.session.scannedProjects = null;
     res.redirect('/admin');
   } catch (error) {
@@ -330,21 +540,46 @@ app.post('/admin/import-json', requireAuth, (req, res) => {
     }
 
     // Importeer alle projecten
+    let imported = 0;
+    let updated = 0;
+
     for (const project of result.projects) {
       const port = project.ports && project.ports.length > 0 ? project.ports[0] : project.port || 3000;
       const urlsJson = JSON.stringify(project.urls || []);
 
-      queries.createProject.run(
-        project.name,
-        project.description || '',
-        project.directory_path,
-        port,
-        project.enabled !== undefined ? project.enabled : 1,
-        project.setup_type || 'unknown',
-        urlsJson
-      );
+      // Check of project al bestaat
+      const existing = queries.getProjectByPath.get(project.directory_path);
+
+      if (existing) {
+        // Update bestaand project
+        queries.updateProject.run(
+          project.name,
+          project.description || existing.description || '',
+          project.directory_path,
+          port,
+          project.enabled !== undefined ? project.enabled : existing.enabled,
+          project.setup_type || existing.setup_type || 'unknown',
+          urlsJson,
+          project.frontend_path || existing.frontend_path || '/',
+          existing.id
+        );
+        updated++;
+      } else {
+        // Nieuw project
+        queries.createProject.run(
+          project.name,
+          project.description || '',
+          project.directory_path,
+          port,
+          project.enabled !== undefined ? project.enabled : 1,
+          project.setup_type || 'unknown',
+          urlsJson
+        );
+        imported++;
+      }
     }
 
+    console.log(`JSON import complete: ${imported} new, ${updated} updated`);
     res.redirect('/admin');
   } catch (error) {
     console.error('Error importing JSON:', error);
@@ -439,8 +674,10 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`\nAdmin panel:`);
   console.log(`  http://pagaaier.school/admin`);
   console.log(`\nDefault login:`);
-  console.log(`  Username: brecht`);
-  console.log(`  Password: He33e-8620_;`);
+  console.log(`  Username: ${process.env.ADMIN_USERNAME || 'admin'}`);
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(`  Password: ${process.env.ADMIN_PASSWORD || '(set in .env file)'}`);
+  }
   console.log(`\nNOTE: Nginx draait op poort 80 en forwarded naar deze app op poort ${PORT}`);
   console.log(`      DNS server (dnsmasq) resolves *.school domeinen naar dit IP`);
   console.log(`===========================================\n`);

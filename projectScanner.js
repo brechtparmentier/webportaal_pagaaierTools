@@ -47,10 +47,10 @@ function analyzeProject(projectPath, projectName) {
   // Check voor verschillende config files
   const hasPackageJson = fs.existsSync(path.join(projectPath, 'package.json'));
   const hasDockerCompose = fs.existsSync(path.join(projectPath, 'docker-compose.yml')) ||
-                           fs.existsSync(path.join(projectPath, 'docker-compose.yaml'));
+    fs.existsSync(path.join(projectPath, 'docker-compose.yaml'));
   const hasDockerfile = fs.existsSync(path.join(projectPath, 'Dockerfile'));
   const hasPm2Config = fs.existsSync(path.join(projectPath, 'ecosystem.config.js')) ||
-                       fs.existsSync(path.join(projectPath, 'pm2.config.js'));
+    fs.existsSync(path.join(projectPath, 'pm2.config.js'));
   const hasRequirements = fs.existsSync(path.join(projectPath, 'requirements.txt'));
   const hasPipfile = fs.existsSync(path.join(projectPath, 'Pipfile'));
 
@@ -153,10 +153,10 @@ function analyzeProject(projectPath, projectName) {
         const varName = match[1];
         const url = match[2];
         const urlType = varName.toLowerCase().includes('prod') ? 'production' :
-                       varName.toLowerCase().includes('dev') ? 'development' :
-                       varName.toLowerCase().includes('stage') || varName.toLowerCase().includes('stag') ? 'staging' :
-                       varName.toLowerCase().includes('demo') ? 'demo' :
-                       'other';
+          varName.toLowerCase().includes('dev') ? 'development' :
+            varName.toLowerCase().includes('stage') || varName.toLowerCase().includes('stag') ? 'staging' :
+              varName.toLowerCase().includes('demo') ? 'demo' :
+                'other';
         info.urls.push({ type: urlType, url, label: varName });
       }
     } catch (error) {
@@ -217,6 +217,7 @@ function analyzeProject(projectPath, projectName) {
 
   // Zoek naar .env files voor URLs en PORTS
   const envFiles = [
+    { file: '.env.example', type: 'other' },
     { file: '.env', type: 'other' },
     { file: '.env.local', type: 'development' },
     { file: '.env.development', type: 'development' },
@@ -232,17 +233,40 @@ function analyzeProject(projectPath, projectName) {
       try {
         const envContent = fs.readFileSync(envPath, 'utf-8');
 
-        // Zoek naar PORT variables
-        const portMatches = envContent.matchAll(/^PORT\s*=\s*(\d+)/gm);
+        // Zoek naar ALL PORT variables (PORT, PORT_FRONTEND, PORT_BACKEND, etc.)
+        const portMatches = envContent.matchAll(/^(PORT[_A-Z]*)\s*=\s*(\d+)/gim);
         for (const match of portMatches) {
-          const port = parseInt(match[1]);
+          const varName = match[1];
+          const port = parseInt(match[2]);
           if (port > 1000 && port < 65536 && !info.ports.includes(port)) {
             info.ports.push(port);
+
+            // Bepaal label op basis van variable naam
+            let label;
+            let urlType = defaultType;
+            const lowerVar = varName.toLowerCase();
+            if (lowerVar.includes('frontend') || lowerVar.includes('client')) {
+              label = `Frontend (${envFile}: port ${port})`;
+              urlType = 'development';
+            } else if (lowerVar.includes('backend') || lowerVar.includes('server')) {
+              label = `Backend (${envFile}: port ${port})`;
+              urlType = 'production';
+            } else if (lowerVar.includes('api')) {
+              label = `API (${envFile}: port ${port})`;
+              urlType = 'production';
+            } else if (lowerVar.includes('docs')) {
+              label = `Docs (${envFile}: port ${port})`;
+              urlType = 'development';
+            } else {
+              label = `${varName} (${envFile}: port ${port})`;
+            }
+
             info.urls.push({
-              type: defaultType,
+              type: urlType,
               url: `http://localhost:${port}`,
-              label: `${envFile} (port ${port})`,
-              port
+              label,
+              port,
+              source: envFile
             });
           }
         }
@@ -264,7 +288,7 @@ function analyzeProject(projectPath, projectName) {
           // Voeg alleen toe als nog niet bestaat
           const exists = info.urls.some(u => u.url === url);
           if (!exists) {
-            info.urls.push({ type: urlType, url, label: varName });
+            info.urls.push({ type: urlType, url, label: varName, source: envFile });
           }
         }
       } catch (error) {
@@ -273,10 +297,147 @@ function analyzeProject(projectPath, projectName) {
     }
   }
 
+  // Scan server files (server.js, app.js, index.js, main.py, etc.)
+  const serverFiles = [
+    'server.js', 'app.js', 'index.js', 'main.js', 'server.ts', 'app.ts', 'index.ts',
+    'main.py', 'app.py', 'server.py', 'wsgi.py', 'asgi.py',
+    'src/server.js', 'src/app.js', 'src/index.js', 'src/main.js',
+    'src/main.py', 'src/app.py'
+  ];
+
+  for (const serverFile of serverFiles) {
+    const serverPath = path.join(projectPath, serverFile);
+    if (fs.existsSync(serverPath)) {
+      try {
+        const content = fs.readFileSync(serverPath, 'utf-8');
+
+        // Match verschillende port patterns
+        const patterns = [
+          /port[:\s]*=\s*(\d+)/gi,                    // port: 3000, port = 3000
+          /listen\((\d+)/gi,                           // listen(3000)
+          /PORT\s*\|\|\s*(\d+)/gi,                     // PORT || 3000
+          /PORT\s*\?\s*PORT\s*:\s*(\d+)/gi,            // PORT ? PORT : 3000
+          /\|\|\s*(\d+)\s*;/g,                         // || 3000;
+          /\.env\(['"]PORT['"]\)\s*\|\|\s*(\d+)/gi,   // .env('PORT') || 3000
+        ];
+
+        for (const pattern of patterns) {
+          const matches = content.matchAll(pattern);
+          for (const match of matches) {
+            const port = parseInt(match[1]);
+            if (port > 1000 && port < 65536 && !info.ports.includes(port)) {
+              info.ports.push(port);
+              info.urls.push({
+                type: 'development',
+                url: `http://localhost:${port}`,
+                label: `${serverFile} (port ${port})`,
+                port,
+                source: serverFile
+              });
+            }
+          }
+        }
+      } catch (error) {
+        console.error(`Error reading ${serverFile} for ${projectName}:`, error.message);
+      }
+    }
+  }
+
+  // Scan Makefile voor port info
+  const makefilePath = path.join(projectPath, 'Makefile');
+  if (fs.existsSync(makefilePath)) {
+    try {
+      const content = fs.readFileSync(makefilePath, 'utf-8');
+
+      // Zoek naar PORT variables in Makefile
+      const portMatches = content.matchAll(/PORT[_A-Z]*\s*[:?]?=\s*(\d+)/gi);
+      for (const match of portMatches) {
+        const port = parseInt(match[1]);
+        if (port > 1000 && port < 65536 && !info.ports.includes(port)) {
+          info.ports.push(port);
+          info.urls.push({
+            type: 'development',
+            url: `http://localhost:${port}`,
+            label: `Makefile (port ${port})`,
+            port,
+            source: 'Makefile'
+          });
+        }
+      }
+
+      // Zoek naar localhost URLs in Makefile
+      const urlMatches = content.matchAll(/https?:\/\/localhost:(\d+)/gi);
+      for (const match of urlMatches) {
+        const port = parseInt(match[1]);
+        if (port > 1000 && port < 65536 && !info.ports.includes(port)) {
+          info.ports.push(port);
+          info.urls.push({
+            type: 'development',
+            url: `http://localhost:${port}`,
+            label: `Makefile (port ${port})`,
+            port,
+            source: 'Makefile'
+          });
+        }
+      }
+    } catch (error) {
+      console.error(`Error reading Makefile for ${projectName}:`, error.message);
+    }
+  }
+
+  // Scan README voor port info
+  const readmeFiles = ['README.md', 'readme.md', 'README.txt', 'README'];
+  for (const readmeFile of readmeFiles) {
+    const readmePath = path.join(projectPath, readmeFile);
+    if (fs.existsSync(readmePath)) {
+      try {
+        const content = fs.readFileSync(readmePath, 'utf-8');
+
+        // Zoek naar localhost URLs met poorten
+        const urlMatches = content.matchAll(/https?:\/\/(?:localhost|127\.0\.0\.1|0\.0\.0\.0):(\d+)/gi);
+        for (const match of urlMatches) {
+          const port = parseInt(match[1]);
+          if (port > 1000 && port < 65536 && !info.ports.includes(port)) {
+            info.ports.push(port);
+            info.urls.push({
+              type: 'development',
+              url: `http://localhost:${port}`,
+              label: `${readmeFile} (port ${port})`,
+              port,
+              source: readmeFile
+            });
+          }
+        }
+
+        // Zoek naar "port 3000" style mentions
+        const portMentions = content.matchAll(/port\s+(\d+)/gi);
+        for (const match of portMentions) {
+          const port = parseInt(match[1]);
+          if (port > 1000 && port < 65536 && !info.ports.includes(port)) {
+            info.ports.push(port);
+            info.urls.push({
+              type: 'development',
+              url: `http://localhost:${port}`,
+              label: `${readmeFile} (port ${port})`,
+              port,
+              source: readmeFile
+            });
+          }
+        }
+      } catch (error) {
+        console.error(`Error reading ${readmeFile} for ${projectName}:`, error.message);
+      }
+      break; // Alleen eerste README lezen
+    }
+  }
+
   // Als geen ports gevonden, gebruik default
   if (info.ports.length === 0) {
     info.ports.push(3000);
   }
+
+  // Sorteer ports (laagste eerst)
+  info.ports.sort((a, b) => a - b);
 
   // Genereer URLs voor alle gevonden ports als er nog geen zijn
   if (info.urls.length === 0) {
@@ -299,15 +460,31 @@ function analyzeProject(projectPath, projectName) {
     return urlObj;
   });
 
-  // Verwijder duplicaten
-  const seenUrls = new Set();
+  // Verwijder duplicaten (zelfde URL + type)
+  const seenUrls = new Map();
   info.urls = info.urls.filter(urlObj => {
     const key = `${urlObj.url}-${urlObj.type}`;
     if (seenUrls.has(key)) {
+      // Behoud entry met source indien beschikbaar
+      const existing = seenUrls.get(key);
+      if (urlObj.source && !existing.source) {
+        seenUrls.set(key, urlObj);
+        return true;
+      }
       return false;
     }
-    seenUrls.add(key);
+    seenUrls.set(key, urlObj);
     return true;
+  });
+
+  // Sorteer URLs: production eerst, dan development, staging, rest
+  const typeOrder = { 'production': 1, 'development': 2, 'staging': 3, 'docker': 4, 'demo': 5, 'main': 6, 'other': 7 };
+  info.urls.sort((a, b) => {
+    const orderA = typeOrder[a.type] || 99;
+    const orderB = typeOrder[b.type] || 99;
+    if (orderA !== orderB) return orderA - orderB;
+    // Bij gelijke type, sorteer op port
+    return (a.port || 0) - (b.port || 0);
   });
 
   return info;
