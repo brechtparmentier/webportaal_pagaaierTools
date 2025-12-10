@@ -65,7 +65,7 @@ help:
 	@echo "  make env              Show environment config"
 	@echo "  make info             Show project info"
 	@echo ""
-	@echo "ℹ️  Server runs on port 9344 (configured in .env)"
+	@echo "ℹ️  Server runs on port 9343 (configured in .env)"
 	@echo ""
 
 # ==============================================================================
@@ -109,7 +109,7 @@ start:
 	fi
 	@echo ""
 	@echo "🌐 Application running on:"
-	@echo "   http://localhost:$$(grep -E '^PORT=' .env | cut -d '=' -f2 || echo 9344)"
+	@echo "   http://localhost:$$(grep -E '^PORT=' .env | cut -d '=' -f2 || echo 9343)"
 	@echo "   http://pagaaier.school (via nginx)"
 
 stop:
@@ -162,7 +162,7 @@ status:
 	fi
 	@echo ""
 	@# Check port
-	@PORT=`grep -E '^PORT=' .env 2>/dev/null | cut -d '=' -f2 || echo 9344`; \
+	@PORT=`grep -E '^PORT=' .env 2>/dev/null | cut -d '=' -f2 || echo 9343`; \
 	echo "🔌 Port $$PORT:"; \
 	if lsof -i :$$PORT >/dev/null 2>&1; then \
 		echo "🟢 In use"; \
@@ -213,7 +213,7 @@ logs-follow:
 
 health:
 	@echo "🏥 Checking application health..."
-	@PORT=$$(grep -E '^PORT=' .env | cut -d '=' -f2 || echo 9344); \
+	@PORT=$$(grep -E '^PORT=' .env | cut -d '=' -f2 || echo 9343); \
 	if curl -s -f http://localhost:$$PORT/health > /dev/null 2>&1; then \
 		echo "✅ Application is healthy"; \
 		curl -s http://localhost:$$PORT/health | json_pp 2>/dev/null || curl -s http://localhost:$$PORT/health; \
@@ -341,13 +341,13 @@ prod: backup stop
 
 # Show what's running on configured port
 port-check:
-	@PORT=$$(grep -E '^PORT=' .env | cut -d '=' -f2 || echo 9344); \
+	@PORT=$$(grep -E '^PORT=' .env | cut -d '=' -f2 || echo 9343); \
 	echo "🔍 Checking port $$PORT..."; \
 	lsof -i :$$PORT || echo "Nothing running on port $$PORT"
 
 # Open application in browser
 open:
-	@PORT=$$(grep -E '^PORT=' .env | cut -d '=' -f2 || echo 9344); \
+	@PORT=$$(grep -E '^PORT=' .env | cut -d '=' -f2 || echo 9343); \
 	xdg-open http://localhost:$$PORT 2>/dev/null || \
 	open http://localhost:$$PORT 2>/dev/null || \
 	echo "🌐 Open http://localhost:$$PORT in your browser"
@@ -365,7 +365,7 @@ info:
 	@echo "Project:      webportaal_pagaaierTools"
 	@echo "Node version: $$(node --version 2>/dev/null || echo 'not installed')"
 	@echo "NPM version:  $$(npm --version 2>/dev/null || echo 'not installed')"
-	@echo "Main port:    $$(grep -E '^PORT=' .env 2>/dev/null | cut -d '=' -f2 || echo '9344 (default)')"
+	@echo "Main port:    $$(grep -E '^PORT=' .env 2>/dev/null | cut -d '=' -f2 || echo '9343 (default)')"
 	@echo ""
 	@echo "📁 Directories:"
 	@echo "  Database:  portaal.db"
@@ -373,7 +373,7 @@ info:
 	@echo "  Logs:      ./logs"
 	@echo ""
 	@echo "🔗 URLs:"
-	@echo "  Local:     http://localhost:$$(grep -E '^PORT=' .env 2>/dev/null | cut -d '=' -f2 || echo 9344)"
+	@echo "  Local:     http://localhost:$$(grep -E '^PORT=' .env 2>/dev/null | cut -d '=' -f2 || echo 9343)"
 	@echo "  Production: http://pagaaier.school"
 	@echo "  Admin:     http://pagaaier.school/admin"
 
@@ -430,7 +430,7 @@ watch:
 
 kill-port:
 	@echo "⚠️  Killing processes on configured port..."
-	@PORT=$$(grep -E '^PORT=' .env 2>/dev/null | cut -d '=' -f2 || echo 9344); \
+	@PORT=$$(grep -E '^PORT=' .env 2>/dev/null | cut -d '=' -f2 || echo 9343); \
 	echo "Killing processes on port $$PORT..."; \
 	lsof -ti:$$PORT | xargs kill -9 2>/dev/null || echo "No processes found on port $$PORT"
 	@echo "✅ Done"

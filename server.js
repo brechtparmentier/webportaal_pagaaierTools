@@ -14,7 +14,7 @@ const { checkProjectUrls, getCacheStats } = require('./portChecker');
 const app = express();
 
 // Configuration from environment variables
-const PORT = parseInt(process.env.PORT || process.env.PORT_BACKEND || '9344');
+const PORT = parseInt(process.env.PORT || process.env.PORT_FRONTEND || '9343');
 const SESSION_SECRET = process.env.SESSION_SECRET || 'pagaaiertools-secret-key-2024-CHANGE-THIS';
 const SESSION_MAX_AGE = parseInt(process.env.SESSION_MAX_AGE || '86400000'); // 24 hours
 const DEFAULT_PROJECT_PORT = parseInt(process.env.DEFAULT_PROJECT_PORT || '3000');
