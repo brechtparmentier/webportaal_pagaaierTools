@@ -242,7 +242,7 @@ function analyzeProject(projectPath, projectName) {
             info.ports.push(port);
 
             // Bepaal label op basis van variable naam
-            let label = `${envFile}: ${varName}`;
+            let label;
             let urlType = defaultType;
             const lowerVar = varName.toLowerCase();
             if (lowerVar.includes('frontend') || lowerVar.includes('client')) {

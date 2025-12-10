@@ -197,7 +197,9 @@ app.get('/', async (req, res) => {
           primaryUrl: fullUrl
         });
       }
-    } res.render('index', {
+    }
+
+    res.render('index', {
       projects: processedProjects
     });
   } catch (error) {
@@ -673,7 +675,9 @@ app.listen(PORT, '0.0.0.0', () => {
   console.log(`  http://pagaaier.school/admin`);
   console.log(`\nDefault login:`);
   console.log(`  Username: ${process.env.ADMIN_USERNAME || 'admin'}`);
-  console.log(`  Password: ${process.env.ADMIN_PASSWORD || '(set in .env file)'}`);
+  if (process.env.NODE_ENV !== 'production') {
+    console.log(`  Password: ${process.env.ADMIN_PASSWORD || '(set in .env file)'}`);
+  }
   console.log(`\nNOTE: Nginx draait op poort 80 en forwarded naar deze app op poort ${PORT}`);
   console.log(`      DNS server (dnsmasq) resolves *.school domeinen naar dit IP`);
   console.log(`===========================================\n`);

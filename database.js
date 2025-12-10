@@ -42,18 +42,23 @@ function initDatabase() {
     CREATE INDEX IF NOT EXISTS idx_projects_enabled ON projects(enabled);
     CREATE INDEX IF NOT EXISTS idx_projects_name ON projects(name);
     CREATE INDEX IF NOT EXISTS idx_projects_port ON projects(port);
-    CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
   `);
 
-  // Verwijder duplicaten op basis van directory_path (behoud oudste)
-  db.exec(`
-    DELETE FROM projects
-    WHERE id NOT IN (
-      SELECT MIN(id)
-      FROM projects
-      GROUP BY directory_path
-    )
-  `);
+  // One-time check for duplicates on startup (logs if found)
+  const duplicateCheck = db.prepare(`
+    SELECT directory_path, COUNT(*) as count 
+    FROM projects 
+    GROUP BY directory_path 
+    HAVING count > 1
+  `).all();
+
+  if (duplicateCheck.length > 0) {
+    console.log(`⚠️  Found ${duplicateCheck.length} duplicate project(s) in database`);
+    duplicateCheck.forEach(dup => {
+      console.log(`   - ${dup.directory_path} (${dup.count} entries)`);
+    });
+    console.log('   Run migration script to remove duplicates: node migrate-db.js');
+  }
 
   // Check of default admin user bestaat
   const adminUsername = process.env.ADMIN_USERNAME || 'admin';
@@ -119,7 +124,7 @@ function getQueries() {
     getProjectById: db.prepare('SELECT * FROM projects WHERE id = ?'),
     getProjectByPath: db.prepare('SELECT * FROM projects WHERE directory_path = ?'),
     createProject: db.prepare(`
-      INSERT OR REPLACE INTO projects (name, description, directory_path, port, enabled, setup_type, urls)
+      INSERT OR IGNORE INTO projects (name, description, directory_path, port, enabled, setup_type, urls)
       VALUES (?, ?, ?, ?, ?, ?, ?)
     `),
     updateProject: db.prepare(`
